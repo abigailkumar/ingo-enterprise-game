@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jonathan's Adventure</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a0a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+    }
+    #gameContainer {
+      position: relative;
+      width: 800px;
+      height: 450px;
+      border: 2px solid #333;
+      overflow: hidden;
+      transform-origin: center center;
+      /* scale is set by JS on load and resize */
+    }
+    #gameCanvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #uiCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="800" height="450"></canvas>
+    <canvas id="uiCanvas" width="800" height="450"></canvas>
+  </div>
+  <script src="game.js"></script>
+  <script>
+    function scaleGame() {
+      const scaleX = window.innerWidth  / 800;
+      const scaleY = window.innerHeight / 450;
+      const scale  = Math.min(scaleX, scaleY) * 0.97; // 3% breathing room
+      document.getElementById('gameContainer').style.transform = `scale(${scale})`;
+    }
+    window.addEventListener('resize', scaleGame);
+    scaleGame();
+  </script>
+</body>
+</html>
