@@ -383,6 +383,66 @@ const phoneNotif = {
   }
 };
 
+// ---- End Screen Text ---------------------------------------
+const endScreen = {
+  MESSAGES: [
+    { text: "Jonathan continued on to make one of the greatest games in history.",                              hold: 5000, font: 'italic 15px "Courier New"' },
+    { text: "Ingo the investor continued investing in Jonathan's projects and got a cameo in each game.",       hold: 4000, font: 'italic 15px "Courier New"' },
+    { text: "Happy birthday, Jonathan!",                                                                        hold: 99999, font: 'bold 22px "Courier New"' },
+  ],
+  FADE_IN_MS:  1200,
+  FADE_OUT_MS: 800,
+
+  visible:  false,
+  msgIndex: 0,
+  alpha:    0,
+  phase:    'idle', // 'fade_in' | 'hold' | 'fade_out'
+  timer:    0,
+
+  show() {
+    this.visible  = true;
+    this.msgIndex = 0;
+    this.alpha    = 0;
+    this.phase    = 'fade_in';
+    this.timer    = this.FADE_IN_MS;
+  },
+
+  update(dtMs) {
+    if (!this.visible) return;
+    this.timer -= dtMs;
+
+    if (this.phase === 'fade_in') {
+      this.alpha = Math.min(1, 1 - this.timer / this.FADE_IN_MS);
+      if (this.timer <= 0) { this.alpha = 1; this.phase = 'hold'; this.timer = this.MESSAGES[this.msgIndex].hold; }
+
+    } else if (this.phase === 'hold') {
+      if (this.timer <= 0) { this.phase = 'fade_out'; this.timer = this.FADE_OUT_MS; }
+
+    } else if (this.phase === 'fade_out') {
+      this.alpha = Math.max(0, this.timer / this.FADE_OUT_MS);
+      if (this.timer <= 0) {
+        this.alpha = 0;
+        this.msgIndex++;
+        if (this.msgIndex < this.MESSAGES.length) { this.phase = 'fade_in'; this.timer = this.FADE_IN_MS; }
+        else { this.visible = false; }
+      }
+    }
+  },
+
+  draw(ctx) {
+    if (!this.visible || this.alpha <= 0) return;
+    const msg = this.MESSAGES[this.msgIndex];
+    if (!msg) return;
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle   = '#ffffff';
+    ctx.font        = msg.font;
+    ctx.textAlign   = 'center';
+    ctx.fillText(msg.text, GAME_W / 2, GAME_H / 2);
+    ctx.restore();
+  },
+};
+
 // ---- Fade Overlay ------------------------------------------
 const fadeOverlay = {
   alpha: 0, target: 0, onComplete: null,
@@ -636,7 +696,7 @@ const dinerScene = {
       showDialogue("Huh.", 'Jonathan');
     }, 1200);
     setTimeout(() => showDialogue("Out of Body. Here we go.", 'Jonathan'), 5500);
-    setTimeout(() => fadeOverlay.fadeTo(1), 9500);
+    setTimeout(() => fadeOverlay.fadeTo(1, () => endScreen.show()), 9500);
   },
 
   handleClick(sx, sy) {
@@ -888,8 +948,8 @@ const parkScene = {
   exit() {
     currentScene = 'street';
     // Return player near the park entrance on the street
-    player.x = 830; player.y = 285;
-    player.targetX = 830; player.targetY = 285;
+    player.x = 720; player.y = 285;
+    player.targetX = 720; player.targetY = 285;
     player.facing = -1;
     pendingInteraction = null;
   },
@@ -899,7 +959,9 @@ const parkScene = {
       this.treeState = 'leaves_shaken';
       this.treeShakeTimer = 60;
       this.spawnLeaves(7);
-      showDialogue("The tree shudders. A shower of leaves... and something else up there catches the light.", 'Jonathan');
+      inputLocked = true;
+      dialogue.show('Jonathan', "The tree shudders. A shower of leaves... and something else up there catches the light.", 4500)
+        .whenDone(() => { inputLocked = false; });
     } else if (this.treeState === 'leaves_shaken') {
       this.treeState = 'whip_visible';
       this.treeShakeTimer = 45;
@@ -1297,6 +1359,16 @@ const hotspots = [
     pickup: "It's bolted to a building.",
   },
   {
+    id: 'fire_escape_package', name: 'Deli Package',
+    x: 138, y: 10, w: 44, h: 35,
+    look: "A sealed package just sitting on a fire escape landing. Somebody's not getting their delivery today.",
+    talk: "It's a cardboard box. I've had worse conversations, but still.",
+    pickup: "It's on the second landing. I can't reach it from down here.",
+    push: "I'd need to be up there to push anything.",
+    pull: "Nothing to grab onto from here.",
+    use: "Use what, exactly? And how would I even get up there?",
+  },
+  {
     id: 'deli', name: 'Westside News & Deli',
     x: 105, y: 131, w: 123, h: 116,
     look: "A cramped deli stuffed with lottery tickets, newspapers in four languages, and a fridge that hums too loud.",
@@ -1317,7 +1389,7 @@ const hotspots = [
     x: 226, y: 89, w: 136, h: 190,
     look: "The red and orange glow of Popeyes cuts through the dusk. The smell of fried chicken drifts out onto the sidewalk.",
     talk: "The cashier gives you a dead-eyed stare. This isn't a talking situation.",
-    use: "You order a spicy chicken sandwich and a biscuit. Correct choice.",
+    use: "You order a spicy chicken sandwich, a biscuit, and mashed potatoes. Correct choice.",
     pickup: "You can't put a Popeyes in your pocket. Though you wish you could.",
   },
   {
@@ -1522,6 +1594,7 @@ function getVisibleHotspots() {
   return hotspots.filter(h => {
     if (h.collected) return false;
     if (h.id === 'popeyes_employee') return gameState === 'puzzle_active' || gameState === 'puzzle_complete' || gameState === 'dialogue_tree' || gameState === 'ending';
+    if (h.id === 'fire_escape_package') return !puzzleFireEscapeClimbed && !inventory.has('delipackage');
     return true;
   });
 }
@@ -1534,10 +1607,13 @@ function getActiveHotspots() {
 let hoveredHotspot = null, cursorLabel = '', mouseScreenX = 0, mouseScreenY = 0;
 
 function getHotspotAtWorld(wx, wy) {
-  return getActiveHotspots().find(h => {
+  const matches = getActiveHotspots().filter(h => {
     if (usingItem?.id === 'whip' && h.id === 'popeyes_employee') return false;
     return wx >= h.x && wx <= h.x + h.w && wy >= h.y && wy <= h.y + h.h;
-  }) || null;
+  });
+  if (!matches.length) return null;
+  // Prefer the smallest-area hotspot so specific hotspots win over large ones
+  return matches.reduce((a, b) => (a.w * a.h <= b.w * b.h ? a : b));
 }
 
 function drawCursorLabel(ctx, sx, sy) {
@@ -1616,6 +1692,45 @@ function interact(hotspot) {
   }
 
   // Citi Bike — no longer part of puzzle
+
+  // Fire Escape Package hotspot
+  if (hotspot.id === 'fire_escape_package') {
+    const duringPuzzle = gameState === 'puzzle_active';
+    if (verb === 'Look at') {
+      showDialogue(duringPuzzle
+        ? "I wonder if I can use something to get the ladder down and grab the package."
+        : "A sealed package just sitting on a fire escape landing. Somebody's not getting their delivery today.", 'Jonathan'); return;
+    }
+    if (verb === 'Talk to') {
+      showDialogue("It's a cardboard box. I've had worse conversations, but still.", 'Jonathan'); return;
+    }
+    if (verb === 'Pick up') {
+      if (duringPuzzle) {
+        showDialogue(inventory.has('whip')
+          ? "I could use Indy's whip to pull that ladder down."
+          : "The ladder's retracted. I need something to reach it.", 'Jonathan');
+      } else {
+        showDialogue("It's on the second landing. I can't reach it from down here.", 'Jonathan');
+      }
+      return;
+    }
+    if (verb === 'Push') {
+      showDialogue(duringPuzzle
+        ? "I need to get up there first. That ladder's the real problem."
+        : "I'd need to be up there to push anything.", 'Jonathan'); return;
+    }
+    if (verb === 'Pull') {
+      showDialogue(duringPuzzle
+        ? "If I could get that ladder down, I could climb up and grab it."
+        : "Nothing to grab onto from here.", 'Jonathan'); return;
+    }
+    if (verb === 'Use') {
+      showDialogue(duringPuzzle
+        ? "I need something that can reach that ladder."
+        : "Use what, exactly? And how would I even get up there?", 'Jonathan'); return;
+    }
+    return;
+  }
 
   // Fire Escape — puzzle-aware
   if (hotspot.id === 'fireescape' && gameState === 'puzzle_active') {
@@ -1785,6 +1900,12 @@ function handleUseItemOn(item, hotspot) {
         showDialogue("Already got the package. The ladder's down.", 'Jonathan'); return;
       }
       doFireEscapeWhip(); return;
+    }
+    // Package on fire escape — whip goes past it, not useful
+    if (hotspot.id === 'fire_escape_package') {
+      showDialogue(gameState === 'puzzle_active'
+        ? "The whip snaps past the package. Getting the ladder is the move, not the package."
+        : "The whip snaps past the package. Impressive form. Zero results.", 'Jonathan'); return;
     }
     // Silly dialogues for everything else
     if (hotspot.id === 'deli')         { showDialogue("You crack the whip in the deli doorway. The owner gives you a look that transcends language.", 'Jonathan'); return; }
@@ -2119,7 +2240,7 @@ function gameLoop(timestamp) {
 
     parkScene.update(dt);
   }
-  dialogue.update(dtMs); phoneNotif.update(dtMs); dinerScene.update(dtMs); fadeOverlay.update(dt); music.update(dtMs); muteIcon.update(dtMs);
+  dialogue.update(dtMs); phoneNotif.update(dtMs); dinerScene.update(dtMs); fadeOverlay.update(dt); music.update(dtMs); muteIcon.update(dtMs); endScreen.update(dtMs);
 
   // --- Draw game canvas ---
   gc.clearRect(0, 0, GAME_W, GAME_H);
@@ -2154,6 +2275,7 @@ function gameLoop(timestamp) {
   phoneNotif.draw(uc);
   muteIcon.draw(uc);
   fadeOverlay.draw(uc);
+  endScreen.draw(uc);
 
   requestAnimationFrame(gameLoop);
 }
